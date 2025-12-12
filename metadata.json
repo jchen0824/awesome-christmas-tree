@@ -1,0 +1,7 @@
+{
+  "name": "Grand Luxury 3D Christmas Gallery",
+  "description": "An interactive, gesture-controlled 3D particle Christmas tree gallery featuring 45,000+ lights, floating polaroid memories, and cinematic bloom effects.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
