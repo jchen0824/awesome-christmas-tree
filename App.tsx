@@ -336,6 +336,23 @@ const Scene = ({
 
 // --- Main App Component ---
 
+const WelcomeScreen = ({ onStart }: { onStart: () => void }) => (
+  <div
+    onClick={onStart}
+    className="absolute inset-0 flex flex-col items-center justify-center bg-black/95 z-[100] cursor-pointer"
+  >
+    <div className="text-center animate-pulse">
+      <h1 className="text-4xl md:text-6xl font-serif text-yellow-500 mb-6 drop-shadow-[0_0_15px_rgba(255,215,0,0.5)]">
+        Merry Christmas 🎄
+      </h1>
+      <div className="inline-block border border-yellow-500/50 rounded-full px-8 py-3 text-yellow-200 hover:bg-yellow-500/20 transition-all duration-500">
+        Click to Enter
+      </div>
+      <p className="text-gray-500 text-xs mt-8 uppercase tracking-widest">Turn on sound for best experience</p>
+    </div>
+  </div>
+);
+
 const App: React.FC = () => {
   const [photos, setPhotos] = useState<PhotoData[]>([]);
   const [interactionMode, setInteractionMode] = useState<InteractionMode>(InteractionMode.MOUSE);
@@ -345,6 +362,7 @@ const App: React.FC = () => {
   const [isHandDetected, setIsHandDetected] = useState(false);
 
   const [showUI, setShowUI] = useState(true);
+  const [hasStarted, setHasStarted] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
@@ -367,17 +385,14 @@ const App: React.FC = () => {
     setPhotos(initialPhotos);
   }, []);
 
-  useEffect(() => {
+  const handleStart = () => {
+    setHasStarted(true);
     if (audioRef.current) {
-      // NOTE: To use local music, place 'bgm.mp3' in public/music folder 
-      // and change src to: "music/bgm.mp3"
-      // Using a public domain placeholder for demonstration.
       audioRef.current.src = "music/bgm.mp3";
       audioRef.current.volume = 0.5;
-      // Attempt auto-play (might be blocked by browser policy until interaction)
-      audioRef.current.play().catch(e => console.log("Audio autoplay blocked (waiting for interaction):", e));
+      audioRef.current.play().catch(e => console.error("Audio playback error:", e));
     }
-  }, []);
+  };
 
   const handleGestureUpdate = (data: { rotation: number; dispersion: number; isHandDetected: boolean }) => {
     // Update ref immediately
@@ -398,6 +413,7 @@ const App: React.FC = () => {
 
   return (
     <div className="w-full h-full relative bg-black overflow-hidden">
+      {!hasStarted && <WelcomeScreen onStart={handleStart} />}
 
       {/* 3D Scene */}
       <Canvas dpr={[1, 2]} camera={{ position: [0, 0, 25], fov: 45 }}>
@@ -426,11 +442,11 @@ const App: React.FC = () => {
       <Loader />
 
       {/* UI Overlay */}
-      <div className={`absolute top-0 left-0 w-full h-full pointer-events-none transition-opacity duration-500 ${showUI ? 'opacity-100' : 'opacity-0'}`}>
+      <div className={`absolute top-0 left-0 w-full h-full pointer-events-none transition-opacity duration-500 ${showUI && hasStarted ? 'opacity-100' : 'opacity-0'}`}>
         {/* Header */}
         <div className="absolute top-6 left-0 w-full text-center pointer-events-auto">
           <h1 className="text-4xl md:text-6xl font-serif text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 via-yellow-400 to-yellow-600 drop-shadow-[0_0_10px_rgba(255,215,0,0.8)]">
-            Merry Christmas!!
+            Merry Christmas 🎄
           </h1>
           <p className="text-yellow-100/80 mt-2 font-light tracking-widest text-sm uppercase">Interactive Memory Gallery</p>
         </div>
@@ -461,7 +477,7 @@ const App: React.FC = () => {
                 onClick={() => setInteractionMode(InteractionMode.GESTURE)}
                 className={`flex-1 px-4 py-2 rounded-lg text-sm transition-all border border-transparent ${interactionMode === InteractionMode.GESTURE ? 'bg-yellow-500 text-black font-bold shadow-[0_0_10px_rgba(255,215,0,0.4)]' : 'bg-gray-800 hover:bg-gray-700 hover:border-gray-600'}`}
               >
-                AI Hand
+                Gesture
               </button>
             </div>
             {interactionMode === InteractionMode.GESTURE && (
@@ -483,7 +499,7 @@ const App: React.FC = () => {
         </button>
       </div>
 
-      {!showUI && (
+      {!showUI && hasStarted && (
         <button
           onClick={() => setShowUI(true)}
           className="absolute top-6 right-6 z-50 pointer-events-auto text-white/50 hover:text-white bg-black/50 px-3 py-1 rounded backdrop-blur-sm"
