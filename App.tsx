@@ -14,6 +14,7 @@ import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import GestureController from './components/GestureController';
 import { PhotoData, InteractionMode } from './types';
+import { getAssetPath } from './utils/assets';
 
 // --- Constants ---
 const PARTICLE_COUNT = 45000;
@@ -388,7 +389,7 @@ const App: React.FC = () => {
   const handleStart = () => {
     setHasStarted(true);
     if (audioRef.current) {
-      audioRef.current.src = "music/bgm.mp3";
+      audioRef.current.src = getAssetPath("music/bgm.mp3");
       audioRef.current.volume = 0.5;
       audioRef.current.play().catch(e => console.error("Audio playback error:", e));
     }
