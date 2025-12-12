@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { FilesetResolver, HandLandmarker, DrawingUtils } from '@mediapipe/tasks-vision';
-import { getAssetPath } from '../utils/assets';
 
 interface GestureControllerProps {
   onUpdate: (data: { rotation: number; dispersion: number; isHandDetected: boolean }) => void;
@@ -19,7 +18,7 @@ const GestureController: React.FC<GestureControllerProps> = ({ onUpdate, enabled
       try {
         console.log("Initializing MediaPipe HandLandmarker...");
         // Use local WASM and Model files for performance
-        const wasmUrl = getAssetPath("wasm");
+        const wasmUrl = "wasm";
         const vision = await FilesetResolver.forVisionTasks(wasmUrl);
 
         if (!vision) {
@@ -28,7 +27,7 @@ const GestureController: React.FC<GestureControllerProps> = ({ onUpdate, enabled
 
         handLandmarkerRef.current = await HandLandmarker.createFromOptions(vision, {
           baseOptions: {
-            modelAssetPath: getAssetPath("models/hand_landmarker.task"),
+            modelAssetPath: "models/hand_landmarker.task",
             delegate: "GPU"
           },
           runningMode: "VIDEO",
