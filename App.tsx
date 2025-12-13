@@ -22,7 +22,7 @@ const PARTICLE_COUNT = 45000;
 const TREE_HEIGHT = 18;
 const TREE_RADIUS = 7;
 const GIFT_COLORS = ['#ff0000', '#ffd700', '#ffffff', '#00ff00'];
-const TOTAL_PHOTOS = 30; // Number of photos to load
+const TOTAL_PHOTOS = 10; // Number of photos to load
 
 // --- Error Handling ---
 
@@ -601,11 +601,13 @@ const App: React.FC = () => {
   const audioRef = useRef<HTMLAudioElement>(null);
 
   // Dragging state for Control Center
-  const [controlPos, setControlPos] = useState({ x: 24, y: 80 });
+  // Initial position: Bottom-Left (approx 320px from bottom to account for panel height)
+  const [controlPos, setControlPos] = useState({ x: 24, y: typeof window !== 'undefined' ? window.innerHeight - 320 : 500 });
   const [isDragging, setIsDragging] = useState(false);
   const dragOffset = useRef({ x: 0, y: 0 });
 
   useEffect(() => {
+    // Mouse event handlers
     const handleWindowMouseMove = (e: MouseEvent) => {
       if (isDragging) {
         setControlPos({
@@ -619,25 +621,58 @@ const App: React.FC = () => {
       setIsDragging(false);
     };
 
+    // Touch event handlers
+    const handleWindowTouchMove = (e: TouchEvent) => {
+      if (isDragging && e.touches.length > 0) {
+        e.preventDefault(); // Prevent scrolling while dragging
+        const touch = e.touches[0];
+        setControlPos({
+          x: touch.clientX - dragOffset.current.x,
+          y: touch.clientY - dragOffset.current.y
+        });
+      }
+    };
+
+    const handleWindowTouchEnd = () => {
+      setIsDragging(false);
+    };
+
     if (isDragging) {
       window.addEventListener('mousemove', handleWindowMouseMove);
       window.addEventListener('mouseup', handleWindowMouseUp);
+      // Add touch listeners (non-passive to allow preventDefault)
+      window.addEventListener('touchmove', handleWindowTouchMove, { passive: false });
+      window.addEventListener('touchend', handleWindowTouchEnd);
     }
 
     return () => {
       window.removeEventListener('mousemove', handleWindowMouseMove);
       window.removeEventListener('mouseup', handleWindowMouseUp);
+      window.removeEventListener('touchmove', handleWindowTouchMove);
+      window.removeEventListener('touchend', handleWindowTouchEnd);
     };
   }, [isDragging]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    // Prevent default to avoid text selection inside the panel while dragging
     e.preventDefault();
     setIsDragging(true);
     dragOffset.current = {
       x: e.clientX - controlPos.x,
       y: e.clientY - controlPos.y
     };
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length > 0) {
+      // e.preventDefault(); // Optional: might want to allow start of scroll if not dragging directly? 
+      // User likely wants to drag immediately.
+      setIsDragging(true);
+      const touch = e.touches[0];
+      dragOffset.current = {
+        x: touch.clientX - controlPos.x,
+        y: touch.clientY - controlPos.y
+      };
+    }
   };
 
   useEffect(() => {
@@ -750,9 +785,10 @@ const App: React.FC = () => {
 
         {/* Controls Panel - Draggable */}
         <div
-          className="absolute flex flex-col gap-4 pointer-events-auto max-w-sm cursor-move select-none"
+          className="absolute flex flex-col gap-4 pointer-events-auto max-w-sm cursor-move select-none touch-none"
           style={{ top: controlPos.y, left: controlPos.x }}
           onMouseDown={handleMouseDown}
+          onTouchStart={handleTouchStart}
         >
 
           {/* Mode Switcher & Music */}
