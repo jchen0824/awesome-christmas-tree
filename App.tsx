@@ -123,13 +123,20 @@ const ChristmasTreeParticles = ({ gestureRef, interactionMode }: { gestureRef: R
           
           vec4 mvPosition = modelViewMatrix * vec4(explodedPos, 1.0);
           gl_Position = projectionMatrix * mvPosition;
-          gl_PointSize = (40.0 * uPixelRatio) / -mvPosition.z;
-          vColor = color;
+          
+          // Fade out particles as they get close to the camera to prevent "flash"
+          float distanceToCamera = -mvPosition.z;
+          float alphaFade = smoothstep(2.0, 10.0, distanceToCamera);
+          
+          float size = (40.0 * uPixelRatio) / distanceToCamera;
+          gl_PointSize = clamp(size, 0.0, 50.0) * alphaFade; // Also shrink them
+          vColor = color * alphaFade;
         }
       `,
       fragmentShader: `
         varying vec3 vColor;
         void main() {
+          if (length(vColor) < 0.01) discard; // Optim: discard invisible particles
           float strength = distance(gl_PointCoord, vec2(0.5));
           strength = 1.0 - strength;
           strength = pow(strength, 3.0);
@@ -145,7 +152,8 @@ const ChristmasTreeParticles = ({ gestureRef, interactionMode }: { gestureRef: R
 
   useFrame((state) => {
     if (shaderMaterial) {
-      shaderMaterial.uniforms.uTime.value = state.clock.getElapsedTime();
+      // Wrap time around 2*PI * 10 (approx 62.8) to keep float precision high while maintaining sine wave continuity
+      shaderMaterial.uniforms.uTime.value = (state.clock.getElapsedTime()) % (Math.PI * 2);
 
       const targetDispersion = interactionMode === InteractionMode.GESTURE
         ? gestureRef.current.dispersion
@@ -430,6 +438,8 @@ const Scene = ({
   const { camera, scene } = useThree();
   const raycaster = useMemo(() => new THREE.Raycaster(), []);
 
+  const photosGroupRef = useRef<THREE.Group>(null);
+
   useFrame((state, delta) => {
     // 1. Scene Rotation Logic
     if (groupRef.current) {
@@ -447,15 +457,14 @@ const Scene = ({
     }
 
     // 2. Raycasting Logic for Focus Mode
-    if (interactionMode === InteractionMode.GESTURE && gestureRef.current.isHandDetected && gestureRef.current.cursor) {
+    if (interactionMode === InteractionMode.GESTURE && gestureRef.current.isHandDetected && gestureRef.current.cursor && photosGroupRef.current) {
       const { cursor, isPinching } = gestureRef.current;
 
       // Update raycaster
       raycaster.setFromCamera(new THREE.Vector2(cursor.x, cursor.y), camera);
 
-      // Raycast against photos
-      // We look for objects with name "photo-hitbox"
-      const intersects = raycaster.intersectObjects(scene.children, true);
+      // Raycast against ONLY photos for performance
+      const intersects = raycaster.intersectObjects(photosGroupRef.current.children, true);
       const hit = intersects.find(i => i.object.name === "photo-hitbox");
 
       if (hit && isPinching) {
@@ -466,8 +475,6 @@ const Scene = ({
         gestureRef.current.focusedId = null;
       }
     }
-    // Removed the 'else' block that forced null focus in non-gesture mode
-    // This allows mouse clicks to set and keep focus.
   });
 
   return (
@@ -477,34 +484,36 @@ const Scene = ({
 
         <Star position={[0, TREE_HEIGHT / 2, 0]} />
 
-        {photos.map((photo, idx) => (
-          <PhotoGroup
-            key={photo.id}
-            photo={photo}
-            gestureRef={gestureRef}
-            interactionMode={interactionMode}
-            index={idx}
-            onClick={(e: any) => {
-              if (interactionMode === InteractionMode.MOUSE) {
-                e.stopPropagation();
-                // Toggle Focus
-                if (gestureRef.current.focusedId === photo.id) {
-                  gestureRef.current.focusedId = null;
-                } else {
-                  gestureRef.current.focusedId = photo.id;
+        <group ref={photosGroupRef}>
+          {photos.map((photo, idx) => (
+            <PhotoGroup
+              key={photo.id}
+              photo={photo}
+              gestureRef={gestureRef}
+              interactionMode={interactionMode}
+              index={idx}
+              onClick={(e: any) => {
+                if (interactionMode === InteractionMode.MOUSE) {
+                  e.stopPropagation();
+                  // Toggle Focus
+                  if (gestureRef.current.focusedId === photo.id) {
+                    gestureRef.current.focusedId = null;
+                  } else {
+                    gestureRef.current.focusedId = photo.id;
+                  }
                 }
-              }
-            }}
-            onPointerOver={() => { if (interactionMode === InteractionMode.MOUSE) document.body.style.cursor = 'pointer'; }}
-            onPointerOut={() => { if (interactionMode === InteractionMode.MOUSE) document.body.style.cursor = 'auto'; }}
-          />
-        ))}
+              }}
+              onPointerOver={() => { if (interactionMode === InteractionMode.MOUSE) document.body.style.cursor = 'pointer'; }}
+              onPointerOut={() => { if (interactionMode === InteractionMode.MOUSE) document.body.style.cursor = 'auto'; }}
+            />
+          ))}
+        </group>
 
         <Gifts />
       </group>
 
-      <Sparkles count={500} scale={20} size={4} speed={0.4} opacity={0.5} color="#ffffff" />
-      <Sparkles count={200} scale={15} size={6} speed={0.2} opacity={0.6} color="#ffd700" />
+      {/*       <Sparkles count={500} scale={20} size={4} speed={0.4} opacity={0.5} color="#ffffff" />
+      <Sparkles count={200} scale={15} size={6} speed={0.2} opacity={0.6} color="#ffd700" /> */}
 
       <ambientLight intensity={0.5} />
       <pointLight position={[10, 10, 10]} intensity={1} color="#ffaa00" />
@@ -747,7 +756,12 @@ const App: React.FC = () => {
       {!hasStarted && <WelcomeScreen onStart={handleStart} />}
 
       {/* 3D Scene */}
-      <Canvas dpr={[1, 2]} camera={{ position: [0, 0, 25], fov: 45 }} onPointerMissed={() => { gestureRef.current.focusedId = null; }}>
+      <Canvas
+        dpr={[1, 2]}
+        gl={{ antialias: false, stencil: false, depth: true }}
+        camera={{ position: [0, 0, 25], fov: 45 }}
+        onPointerMissed={() => { gestureRef.current.focusedId = null; }}
+      >
         <Suspense fallback={null}>
           <Scene
             photos={photos}
@@ -755,7 +769,12 @@ const App: React.FC = () => {
             interactionMode={interactionMode}
           />
           <EffectComposer>
-            <Bloom luminanceThreshold={0.5} luminanceSmoothing={0.9} height={300} intensity={1.5} />
+            <Bloom
+              mipmapBlur
+              luminanceThreshold={1.1}
+              intensity={1.0}
+              radius={0.7}
+            />
             <Vignette eskil={false} offset={0.1} darkness={1.1} />
           </EffectComposer>
         </Suspense>

@@ -68,7 +68,7 @@ const Star = ({ position }: { position: [number, number, number] }) => {
                 <pointLight intensity={2} distance={15} color="#ffaa00" decay={2} />
 
                 {/* Minimal Sparkles for extra "Magic" */}
-                <Sparkles count={15} scale={5} size={6} speed={0.1} opacity={0.8} color="#ffffaa" />
+                {/* <Sparkles count={15} scale={5} size={6} speed={0.1} opacity={0.8} color="#ffffaa" /> */}
             </Float>
         </group>
     );

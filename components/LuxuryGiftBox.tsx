@@ -23,8 +23,8 @@ const LuxuryGiftBox: React.FC<LuxuryGiftBoxProps> = ({ position, rotation, scale
     const ribbonMaterial = useMemo(() => {
         return new THREE.MeshStandardMaterial({
             color: '#ffd700',
-            roughness: 0.2,
-            metalness: 1.0, // Glossy Gold
+            roughness: 0.4, // Increased from 0.2 to soften highlights
+            metalness: 0.7, // Reduced from 1.0 to prevent blown-out reflections
             emissive: '#b8860b',
             emissiveIntensity: 0.2,
         });
