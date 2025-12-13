@@ -600,6 +600,46 @@ const App: React.FC = () => {
   const [hasStarted, setHasStarted] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
 
+  // Dragging state for Control Center
+  const [controlPos, setControlPos] = useState({ x: 24, y: 80 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragOffset = useRef({ x: 0, y: 0 });
+
+  useEffect(() => {
+    const handleWindowMouseMove = (e: MouseEvent) => {
+      if (isDragging) {
+        setControlPos({
+          x: e.clientX - dragOffset.current.x,
+          y: e.clientY - dragOffset.current.y
+        });
+      }
+    };
+
+    const handleWindowMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    if (isDragging) {
+      window.addEventListener('mousemove', handleWindowMouseMove);
+      window.addEventListener('mouseup', handleWindowMouseUp);
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleWindowMouseMove);
+      window.removeEventListener('mouseup', handleWindowMouseUp);
+    };
+  }, [isDragging]);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    // Prevent default to avoid text selection inside the panel while dragging
+    e.preventDefault();
+    setIsDragging(true);
+    dragOffset.current = {
+      x: e.clientX - controlPos.x,
+      y: e.clientY - controlPos.y
+    };
+  };
+
   useEffect(() => {
     const initialPhotos: PhotoData[] = [];
     // Load photos. 
@@ -698,17 +738,22 @@ const App: React.FC = () => {
       <Loader />
 
       {/* UI Overlay */}
-      <div className={`absolute top-0 left-0 w-full h-full pointer-events-none transition-opacity duration-500 ${showUI && hasStarted ? 'opacity-100' : 'opacity-0'}`}>
+      <div
+        className={`absolute top-0 left-0 w-full h-full pointer-events-none transition-opacity duration-500 ${showUI && hasStarted ? 'opacity-100' : 'opacity-0'}`}
+      >
         {/* Header */}
         <div className="absolute top-6 left-0 w-full text-center pointer-events-auto">
           <h1 className="text-4xl md:text-6xl font-serif text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 via-yellow-400 to-yellow-600 drop-shadow-[0_0_10px_rgba(255,215,0,0.8)]">
             Merry Christmas 🎄
           </h1>
-          <p className="text-yellow-100/80 mt-2 font-light tracking-widest text-sm uppercase">Interactive Memory Gallery</p>
         </div>
 
-        {/* Controls Panel - Top Left */}
-        <div className="absolute top-6 left-6 flex flex-col gap-4 pointer-events-auto max-w-sm">
+        {/* Controls Panel - Draggable */}
+        <div
+          className="absolute flex flex-col gap-4 pointer-events-auto max-w-sm cursor-move select-none"
+          style={{ top: controlPos.y, left: controlPos.x }}
+          onMouseDown={handleMouseDown}
+        >
 
           {/* Mode Switcher & Music */}
           <div className="bg-black/60 backdrop-blur-md p-4 rounded-xl border border-yellow-500/30 text-white shadow-lg">
