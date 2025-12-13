@@ -13,6 +13,8 @@ import {
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import GestureController from './components/GestureController';
+import Star from './components/Star';
+import LuxuryGiftBox from './components/LuxuryGiftBox';
 import { PhotoData, InteractionMode } from './types';
 
 // --- Constants ---
@@ -178,7 +180,7 @@ const FallbackPhoto = () => (
 );
 
 // Polaroid Photo Component
-const Photo = ({ url, index }: { url: string, index: number }) => {
+const Photo = ({ url, index, id }: { url: string, index: number, id: string }) => {
   const [hovered, setHover] = useState(false);
 
   return (
@@ -186,31 +188,51 @@ const Photo = ({ url, index }: { url: string, index: number }) => {
       <group
         onPointerOver={() => setHover(true)}
         onPointerOut={() => setHover(false)}
-        scale={hovered ? 1.5 : 1}
+        scale={hovered ? 1.05 : 1} // Slight scale up on hover instead of separate glow mesh?
       >
-        {/* White Polaroid Frame */}
-        <mesh position={[0, 0, -0.01]}>
-          <planeGeometry args={[1.2, 1.5]} />
-          <meshBasicMaterial color="#fffaee" side={THREE.DoubleSide} />
+        {/* Double-Sided Photo Body (Thin Box) - HITBOX */}
+        <mesh
+          position={[0, 0, 0]}
+          name="photo-hitbox"
+          userData={{ id }}
+        >
+          {/* Thickness 0.02 for card stock feel */}
+          <boxGeometry args={[1.2, 1.5, 0.02]} />
+          <meshBasicMaterial color="#fffaee" />
         </mesh>
 
-        {/* The Image with Error Boundary */}
+        {/* Using ErrorBoundary for Images */}
         <ImageErrorBoundary fallback={<FallbackPhoto />}>
+          {/* Front Image */}
           <DreiImage
             url={url}
-            position={[0, 0.1, 0]}
+            position={[0, 0.1, 0.015]} // Increased offset to 0.015 (from 0.011) to prevent Z-fighting
             scale={[1, 1]}
-            side={THREE.DoubleSide}
+            transparent
+            opacity={1}
+          />
+          {/* Back Image (Same photo, rotated) */}
+          <DreiImage
+            url={url}
+            position={[0, 0.1, -0.015]} // Increased offset to -0.015
+            rotation={[0, Math.PI, 0]} // Rotated 180 to show upright
+            scale={[1, 1]}
             transparent
             opacity={1}
           />
         </ImageErrorBoundary>
 
-        {/* Glow behind */}
+        {/* Hover Glow Outline (Simple Scaled Plane behind/center?) 
+            If box is used, we can just use outline or a larger plane in middle.
+            Let's put a glow plane in center, large, but behind content?
+            Actually, just a slightly larger plane at 0,0,0 with depthWrite=false?
+        */}
         {hovered && (
-          <mesh position={[0, 0, -0.05]}>
+          <mesh position={[0, 0, 0]}>
             <planeGeometry args={[1.4, 1.7]} />
-            <meshBasicMaterial color="#ffd700" transparent opacity={0.5} />
+            {/* Billboard it? Or just align with photo? Align. */}
+            {/* Make it visible from both sides. */}
+            <meshBasicMaterial color="#ffd700" transparent opacity={0.4} side={THREE.DoubleSide} depthWrite={false} />
           </mesh>
         )}
       </group>
@@ -218,65 +240,168 @@ const Photo = ({ url, index }: { url: string, index: number }) => {
   );
 };
 
-const PhotoGroup = ({ photo, gestureRef, interactionMode, index }: { photo: PhotoData, gestureRef: React.MutableRefObject<any>, interactionMode: InteractionMode, index: number }) => {
+const PhotoGroup = ({ photo, gestureRef, interactionMode, index, ...props }: { photo: PhotoData, gestureRef: React.MutableRefObject<any>, interactionMode: InteractionMode, index: number } & any) => {
   const groupRef = useRef<THREE.Group>(null);
+  const progress = useRef(0); // 0 = Tree, 1 = Focused
+  const lockedState = useRef<{ pos: THREE.Vector3; quat: THREE.Quaternion; scale: THREE.Vector3 } | null>(null);
 
-  useFrame(() => {
+  useFrame((state, delta) => {
     if (groupRef.current) {
-      const dispersion = interactionMode === InteractionMode.GESTURE
-        ? gestureRef.current.dispersion
-        : 0;
+      const { dispersion, focusedId } = gestureRef.current;
+      const isFocused = focusedId === photo.id;
 
-      // Lerp scale and position for smooth transition
-      const currentScale = groupRef.current.scale.x;
-      const targetScale = 1 + dispersion * 0.5;
-      const newScale = THREE.MathUtils.lerp(currentScale, targetScale, 0.1);
+      // 1. Update Transition Progress
+      const targetProgress = isFocused ? 1 : 0;
+      // Use a faster lerp for responsiveness, or delta-based move
+      // Simple lerp:
+      progress.current = THREE.MathUtils.lerp(progress.current, targetProgress, 10 * delta);
 
-      groupRef.current.scale.set(newScale, newScale, newScale);
+      // Snap to target when very close to prevent oscillation
+      if (Math.abs(progress.current - targetProgress) < 0.01) {
+        progress.current = targetProgress;
+      }
 
-      // Calculate target position based on dispersion
-      const targetX = photo.position[0] * (1 + dispersion);
-      const targetZ = photo.position[2] * (1 + dispersion);
-      const targetY = photo.position[1]; // Height doesn't change with dispersion in original logic
+      // Optimization: if effectively 0, just sit at tree state
+      if (progress.current < 0.001) {
+        const activeDispersion = interactionMode === InteractionMode.GESTURE ? dispersion : 0;
 
-      groupRef.current.position.x = THREE.MathUtils.lerp(groupRef.current.position.x, targetX, 0.1);
-      groupRef.current.position.y = THREE.MathUtils.lerp(groupRef.current.position.y, targetY, 0.1);
-      groupRef.current.position.z = THREE.MathUtils.lerp(groupRef.current.position.z, targetZ, 0.1);
+        groupRef.current.position.set(
+          photo.position[0] * (1 + activeDispersion),
+          photo.position[1],
+          photo.position[2] * (1 + activeDispersion)
+        );
+        groupRef.current.rotation.set(photo.rotation[0], photo.rotation[1], photo.rotation[2]);
+        const s = 1 + activeDispersion * 0.5;
+        groupRef.current.scale.set(s, s, s);
+        lockedState.current = null; // Clear cached state
+        return;
+      }
+
+      // 2. Calculate "Start" State (Tree State)
+      // We must calculate this every frame because dispersion might change or to be consistent
+      const activeDispersion = interactionMode === InteractionMode.GESTURE ? dispersion : 0;
+      const treePos = new THREE.Vector3(
+        photo.position[0] * (1 + activeDispersion),
+        photo.position[1],
+        photo.position[2] * (1 + activeDispersion)
+      );
+      const treeQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(...photo.rotation));
+      const treeScale = new THREE.Vector3().setScalar(1 + activeDispersion * 0.5);
+
+      // 3. Calculate "End" State (Locked World State)
+      // We need to position the photo at screen center (camera view center)
+      // Camera is at (0, 0, 25), looking at (0, 0, 0), so a point at (0, 0, z) where z < 25 will be centered
+      // We want the photo at a comfortable viewing distance from camera (e.g., 10 units in front)
+      let lockedPos: THREE.Vector3;
+      let lockedQuat: THREE.Quaternion;
+      const lockedScale = new THREE.Vector3(3, 3, 3); // 3x scale
+
+      // If fully focused (progress === 1), use cached locked state to prevent shaking
+      if (progress.current >= 0.99 && lockedState.current) {
+        lockedPos = lockedState.current.pos;
+        lockedQuat = lockedState.current.quat;
+      } else {
+        // Calculate locked state
+        const parent = groupRef.current.parent;
+        if (parent) {
+          // parent.updateMatrixWorld(); // Ensure up to date
+          const parentInverse = parent.matrixWorld.clone().invert();
+
+          // Camera position in world space
+          const cameraWorldPos = state.camera.position.clone();
+          // Camera forward direction (negative Z in camera space, but we need world direction)
+          const cameraForward = new THREE.Vector3(0, 0, -1).applyQuaternion(state.camera.quaternion);
+
+          // Position photo 10 units in front of camera along its look direction
+          const targetWorldPos = cameraWorldPos.clone().add(cameraForward.multiplyScalar(10));
+
+          // Convert to local space of parent
+          lockedPos = targetWorldPos.applyMatrix4(parentInverse);
+
+          // Rotation: Make photo face the camera
+          // Photo should have rotation that faces -camera forward (towards camera)
+          const targetWorldQuat = state.camera.quaternion.clone();
+          const parentWorldQuat = new THREE.Quaternion();
+          parent.getWorldQuaternion(parentWorldQuat);
+          lockedQuat = parentWorldQuat.invert().multiply(targetWorldQuat);
+
+          // Cache the locked state when we're nearly there
+          if (progress.current >= 0.99) {
+            lockedState.current = {
+              pos: lockedPos.clone(),
+              quat: lockedQuat.clone(),
+              scale: lockedScale.clone()
+            };
+          }
+        } else {
+          // Fallback if no parent (shouldn't happen)
+          lockedPos = treePos;
+          lockedQuat = treeQuat;
+        }
+      }
+
+      // 4. Interpolate
+      // Using smoothstep for factor? or just linear `progress` since we lerped `progress` itself.
+      // `progress` is already smoothed by lerp.
+
+      groupRef.current.position.lerpVectors(treePos, lockedPos, progress.current);
+      groupRef.current.quaternion.slerpQuaternions(treeQuat, lockedQuat, progress.current);
+      groupRef.current.scale.lerpVectors(treeScale, lockedScale, progress.current);
     }
   });
 
   return (
-    <group ref={groupRef} rotation={photo.rotation as any}>
+    <group ref={groupRef} {...props}>
       <Suspense fallback={<FallbackPhoto />}>
-        <Photo url={photo.url} index={index} />
+        {/* We moved rotation logic to the group itself, so we don't pass initial rotation here as prop if we override it.
+            Wait, the <group> had `rotation={photo.rotation}` prop initially. 
+            If we control quaternion manually in useFrame, the prop is ignored after mount.
+            But cleaner to remove it from JSX to avoid confusion.
+            Also, Photo component has generic implementation.
+        */}
+        <Photo url={photo.url} index={index} id={photo.id} />
       </Suspense>
     </group>
   );
 };
 
 // Floating Gifts
+// Floating Gifts - Abundance & Luxury
 const Gifts = () => {
-  const count = 30;
+  const count = 60; // Increased count for abundance
   const gifts = useMemo(() => {
-    return new Array(count).fill(0).map(() => ({
-      pos: [
-        (Math.random() - 0.5) * 10,
-        (Math.random()) * 12 - 6,
-        (Math.random() - 0.5) * 10,
-      ] as [number, number, number],
-      color: GIFT_COLORS[Math.floor(Math.random() * GIFT_COLORS.length)],
-      scale: Math.random() * 0.4 + 0.2
-    }))
+    return new Array(count).fill(0).map(() => {
+      // Create a "pile" effect: more concentrated near the center, but leaving space for the tree trunk
+      const angle = Math.random() * Math.PI * 2;
+      const minRadius = 2;
+      const maxRadius = 12;
+      // Power of 2 to bias towards center (inner ring) or uniform? 
+      // Let's use uniform r but bias density. 
+      const r = minRadius + Math.random() * (maxRadius - minRadius);
+
+      const x = Math.cos(angle) * r;
+      const z = Math.sin(angle) * r;
+      const y = -TREE_HEIGHT / 2 + Math.random() * 2; // Pile up at the base
+
+      return {
+        pos: [x, y, z] as [number, number, number],
+        scale: Math.random() * 0.5 + 0.3,
+        rotation: [0, Math.random() * Math.PI, 0] as [number, number, number],
+        color: Math.random() > 0.5 ? 'black' : 'white' as 'black' | 'white'
+      };
+    });
   }, []);
 
   return (
     <group>
       {gifts.map((g, i) => (
-        <Float key={i} speed={1} floatIntensity={2} position={g.pos}>
-          <mesh rotation={[Math.random(), Math.random(), 0]}>
-            <boxGeometry args={[g.scale, g.scale, g.scale]} />
-            <meshStandardMaterial color={g.color} metalness={0.8} roughness={0.2} emissive={g.color} emissiveIntensity={0.5} />
-          </mesh>
+        <Float key={i} speed={0.5} rotationIntensity={0.2} floatIntensity={0.5} position={g.pos}>
+          <LuxuryGiftBox
+            position={[0, 0, 0]}
+            rotation={g.rotation}
+            scale={g.scale}
+            color={g.color}
+          />
         </Float>
       ))}
     </group>
@@ -284,31 +409,73 @@ const Gifts = () => {
 }
 
 // Scene Controller
+// Scene Controller
 const Scene = ({
   photos,
   gestureRef,
   interactionMode
 }: {
   photos: PhotoData[],
-  gestureRef: React.MutableRefObject<{ rotation: number, dispersion: number, isHandDetected: boolean }>,
+  gestureRef: React.MutableRefObject<{
+    rotation: number,
+    dispersion: number,
+    isHandDetected: boolean,
+    cursor?: { x: number, y: number },
+    isPinching?: boolean,
+    focusedId?: string | null // We treat this as a readable/writable field on the ref for communication
+  }>,
   interactionMode: InteractionMode
 }) => {
   const groupRef = useRef<THREE.Group>(null);
+  const { camera, scene } = useThree();
+  const raycaster = useMemo(() => new THREE.Raycaster(), []);
 
   useFrame((state, delta) => {
+    // 1. Scene Rotation Logic
     if (groupRef.current) {
+      let speed = 0.1;
       if (interactionMode === InteractionMode.GESTURE) {
-        groupRef.current.rotation.y += gestureRef.current.rotation * delta;
-      } else {
-        groupRef.current.rotation.y += 0.1 * delta;
+        speed = gestureRef.current.rotation;
+      }
+
+      // If focused, slow down significantly to avoid dizziness
+      if (gestureRef.current.focusedId) {
+        speed *= 0.05;
+      }
+
+      groupRef.current.rotation.y += speed * delta;
+    }
+
+    // 2. Raycasting Logic for Focus Mode
+    if (interactionMode === InteractionMode.GESTURE && gestureRef.current.isHandDetected && gestureRef.current.cursor) {
+      const { cursor, isPinching } = gestureRef.current;
+
+      // Update raycaster
+      raycaster.setFromCamera(new THREE.Vector2(cursor.x, cursor.y), camera);
+
+      // Raycast against photos
+      // We look for objects with name "photo-hitbox"
+      const intersects = raycaster.intersectObjects(scene.children, true);
+      const hit = intersects.find(i => i.object.name === "photo-hitbox");
+
+      if (hit && isPinching) {
+        // If pinching a photo, focus it
+        gestureRef.current.focusedId = hit.object.userData.id;
+      } else if (!isPinching) {
+        // Release focus if not pinching
+        gestureRef.current.focusedId = null;
       }
     }
+    // Removed the 'else' block that forced null focus in non-gesture mode
+    // This allows mouse clicks to set and keep focus.
   });
 
   return (
     <>
       <group ref={groupRef}>
         <ChristmasTreeParticles gestureRef={gestureRef} interactionMode={interactionMode} />
+
+        <Star position={[0, TREE_HEIGHT / 2, 0]} />
 
         {photos.map((photo, idx) => (
           <PhotoGroup
@@ -317,6 +484,19 @@ const Scene = ({
             gestureRef={gestureRef}
             interactionMode={interactionMode}
             index={idx}
+            onClick={(e: any) => {
+              if (interactionMode === InteractionMode.MOUSE) {
+                e.stopPropagation();
+                // Toggle Focus
+                if (gestureRef.current.focusedId === photo.id) {
+                  gestureRef.current.focusedId = null;
+                } else {
+                  gestureRef.current.focusedId = photo.id;
+                }
+              }
+            }}
+            onPointerOver={() => { if (interactionMode === InteractionMode.MOUSE) document.body.style.cursor = 'pointer'; }}
+            onPointerOut={() => { if (interactionMode === InteractionMode.MOUSE) document.body.style.cursor = 'auto'; }}
           />
         ))}
 
@@ -329,7 +509,54 @@ const Scene = ({
       <ambientLight intensity={0.5} />
       <pointLight position={[10, 10, 10]} intensity={1} color="#ffaa00" />
       <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
+
+      <Cursor gestureRef={gestureRef} interactionMode={interactionMode} />
     </>
+  );
+};
+
+// Visual Cursor for Gesture Mode
+const Cursor = ({ gestureRef, interactionMode }: { gestureRef: React.MutableRefObject<any>, interactionMode: InteractionMode }) => {
+  const cursorRef = useRef<THREE.Mesh>(null);
+  const { viewport } = useThree();
+
+  useFrame(() => {
+    if (cursorRef.current && interactionMode === InteractionMode.GESTURE && gestureRef.current.cursor && gestureRef.current.isHandDetected) {
+      const { x, y } = gestureRef.current.cursor;
+      // Cursor x,y are NDC [-1, 1].
+      // Map to viewport coordinates.
+      // Viewport width/height at z=0 (or whatever distance we want the cursor).
+      // We want it to be "on screen".
+      // Let's put it at z = 10 (arbitrary, ahead of camera which is 25).
+      // Actually, standard method is to put it attached to camera or converting screen to world.
+      // Easiest: use Drei <Html> or just put a mesh at z=20 (camera is 25).
+
+      // Calculate world width/height at distance 5 from camera (25-20=5).
+      // fov=45.
+      const dist = 5;
+      const vH = 2 * Math.tan((45 * Math.PI) / 180 / 2) * dist;
+      const vW = vH * viewport.aspect;
+
+      const wx = (x * vW) / 2;
+      const wy = (y * vH) / 2;
+
+      cursorRef.current.position.set(wx, wy, 20);
+      cursorRef.current.visible = true;
+
+      // Color change on Pinch
+      (cursorRef.current.material as THREE.MeshBasicMaterial).color.set(
+        gestureRef.current.isPinching ? '#00ff00' : '#ff0000'
+      );
+    } else if (cursorRef.current) {
+      cursorRef.current.visible = false;
+    }
+  });
+
+  return (
+    <mesh ref={cursorRef} visible={false}>
+      <ringGeometry args={[0.05, 0.08, 32]} />
+      <meshBasicMaterial color="#ff0000" transparent opacity={0.8} depthTest={false} />
+    </mesh>
   );
 };
 
@@ -356,8 +583,16 @@ const WelcomeScreen = ({ onStart }: { onStart: () => void }) => (
 const App: React.FC = () => {
   const [photos, setPhotos] = useState<PhotoData[]>([]);
   const [interactionMode, setInteractionMode] = useState<InteractionMode>(InteractionMode.MOUSE);
+  const [debugMode, setDebugMode] = useState(false);
   // Replaced state with Ref for high-frequency gesture updates
-  const gestureRef = useRef({ rotation: 0, dispersion: 0, isHandDetected: false });
+  const gestureRef = useRef<{
+    rotation: number;
+    dispersion: number;
+    isHandDetected: boolean;
+    cursor?: { x: number, y: number };
+    isPinching?: boolean;
+    focusedId?: string | null;
+  }>({ rotation: 0, dispersion: 0, isHandDetected: false, focusedId: null });
   // Keep track of hand detection state for UI toggles only
   const [isHandDetected, setIsHandDetected] = useState(false);
 
@@ -394,9 +629,30 @@ const App: React.FC = () => {
     }
   };
 
-  const handleGestureUpdate = (data: { rotation: number; dispersion: number; isHandDetected: boolean }) => {
+  const handleGestureUpdate = (data: {
+    rotation: number;
+    dispersion: number;
+    isHandDetected: boolean;
+    cursor?: { x: number, y: number };
+    isPinching?: boolean;
+  }) => {
     // Update ref immediately
-    gestureRef.current = data;
+    // Preserve existing focusId if not managed by onUpdate (actually onUpdate from gesture controller doesn't know about focusId)
+    // We merge the new data with the existing ref data, ensuring we don't overwrite focusedId with undefined if it's not passed
+    // But gestureController passes a whole new object for rotation/dispersion.
+    // We should copy focusedId from current ref if we want to persist it, BUT Scene updates focusedId.
+    // Scene reads/writes focusedId. gestureRef is shared.
+    // If we overwrite gestureRef.current here, we might lose focusedId if we just do `gestureRef.current = data`.
+    // Correct approach: Object.assign or spread, but be careful.
+    // Scene writes focusedId to the SAME ref object interactively? 
+    // If we replace the object reference, Scene's ref.current changes.
+    // If handleGestureUpdate runs, it sets `gestureRef.current = data`. `data` does NOT contain focusedId.
+    // So focusedId becomes undefined.
+    // Fix:
+    gestureRef.current = {
+      ...gestureRef.current,
+      ...data
+    };
 
     // Only trigger re-render if hand presence changes
     if (data.isHandDetected !== isHandDetected) {
@@ -416,7 +672,7 @@ const App: React.FC = () => {
       {!hasStarted && <WelcomeScreen onStart={handleStart} />}
 
       {/* 3D Scene */}
-      <Canvas dpr={[1, 2]} camera={{ position: [0, 0, 25], fov: 45 }}>
+      <Canvas dpr={[1, 2]} camera={{ position: [0, 0, 25], fov: 45 }} onPointerMissed={() => { gestureRef.current.focusedId = null; }}>
         <Suspense fallback={null}>
           <Scene
             photos={photos}
@@ -451,8 +707,8 @@ const App: React.FC = () => {
           <p className="text-yellow-100/80 mt-2 font-light tracking-widest text-sm uppercase">Interactive Memory Gallery</p>
         </div>
 
-        {/* Controls Panel */}
-        <div className="absolute bottom-6 left-6 flex flex-col gap-4 pointer-events-auto max-w-sm">
+        {/* Controls Panel - Top Left */}
+        <div className="absolute top-6 left-6 flex flex-col gap-4 pointer-events-auto max-w-sm">
 
           {/* Mode Switcher & Music */}
           <div className="bg-black/60 backdrop-blur-md p-4 rounded-xl border border-yellow-500/30 text-white shadow-lg">
@@ -482,9 +738,16 @@ const App: React.FC = () => {
             </div>
             {interactionMode === InteractionMode.GESTURE && (
               <div className="mt-3 pt-3 border-t border-gray-700 text-xs text-gray-400 leading-relaxed">
-                <p><span className="text-yellow-500">✋ Open Hand:</span> Form Tree</p>
-                <p><span className="text-yellow-500">✊ Fist:</span> Cosmic Explosion</p>
+                <p><span className="text-yellow-500">✋ Open Hand:</span> Cosmic Explosion</p>
+                <p><span className="text-yellow-500">✊ Fist:</span> Form Tree</p>
                 <p><span className="text-yellow-500">↔️ Move Hand:</span> Rotate View</p>
+                <p><span className="text-yellow-500">👆 Point (Open):</span> Select Photo</p>
+                <button
+                  onClick={() => setDebugMode(!debugMode)}
+                  className="mt-2 text-xs bg-yellow-500/20 hover:bg-yellow-500/40 text-yellow-200 px-2 py-1 rounded transition-colors w-full"
+                >
+                  {debugMode ? '🎥 Hide Camera' : '🎥 Show Camera'}
+                </button>
               </div>
             )}
           </div>
@@ -515,6 +778,7 @@ const App: React.FC = () => {
       <GestureController
         enabled={interactionMode === InteractionMode.GESTURE}
         onUpdate={handleGestureUpdate}
+        debugMode={debugMode}
       />
 
     </div>
