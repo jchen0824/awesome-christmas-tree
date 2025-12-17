@@ -609,6 +609,7 @@ const App: React.FC = () => {
 
   const [showUI, setShowUI] = useState(true);
   const [hasStarted, setHasStarted] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(true);
   const audioRef = useRef<HTMLAudioElement>(null);
 
   // Dragging state for Control Center
@@ -748,8 +749,13 @@ const App: React.FC = () => {
 
   const toggleMusic = () => {
     if (audioRef.current) {
-      if (audioRef.current.paused) audioRef.current.play();
-      else audioRef.current.pause();
+      if (audioRef.current.paused) {
+        audioRef.current.play();
+        setIsPlaying(true);
+      } else {
+        audioRef.current.pause();
+        setIsPlaying(false);
+      }
     }
   }
 
@@ -813,42 +819,41 @@ const App: React.FC = () => {
         >
 
           {/* Mode Switcher & Music */}
-          <div className="bg-black/60 backdrop-blur-md p-4 rounded-xl border border-yellow-500/30 text-white shadow-lg">
-            <div className="flex justify-between items-center mb-3">
-              <h3 className="text-yellow-400 font-bold uppercase text-xs tracking-wider">Control Center</h3>
+          <div className="bg-black/80 backdrop-blur-sm rounded-xl p-4 border border-yellow-500/30 shadow-lg">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-yellow-500 font-bold text-sm tracking-wider">控制中心</h3>
               <button
                 onClick={toggleMusic}
-                className="text-xs bg-yellow-500/20 hover:bg-yellow-500/40 text-yellow-200 px-2 py-1 rounded transition-colors"
+                className="text-xs bg-yellow-500/20 hover:bg-yellow-500/40 text-yellow-200 px-3 py-1 rounded transition-colors flex items-center gap-1"
               >
-                🎵 Toggle Music
+                🎵 {isPlaying ? '暂停音乐' : '播放音乐'}
               </button>
             </div>
-
             <div className="flex gap-2">
               <button
                 onClick={() => setInteractionMode(InteractionMode.MOUSE)}
                 className={`flex-1 px-4 py-2 rounded-lg text-sm transition-all border border-transparent ${interactionMode === InteractionMode.MOUSE ? 'bg-yellow-500 text-black font-bold shadow-[0_0_10px_rgba(255,215,0,0.4)]' : 'bg-gray-800 hover:bg-gray-700 hover:border-gray-600'}`}
               >
-                Mouse
+                🖱️ 鼠标
               </button>
               <button
                 onClick={() => setInteractionMode(InteractionMode.GESTURE)}
                 className={`flex-1 px-4 py-2 rounded-lg text-sm transition-all border border-transparent ${interactionMode === InteractionMode.GESTURE ? 'bg-yellow-500 text-black font-bold shadow-[0_0_10px_rgba(255,215,0,0.4)]' : 'bg-gray-800 hover:bg-gray-700 hover:border-gray-600'}`}
               >
-                Gesture
+                ✋ 手势
               </button>
             </div>
             {interactionMode === InteractionMode.GESTURE && (
               <div className="mt-3 pt-3 border-t border-gray-700 text-xs text-gray-400 leading-relaxed">
-                <p><span className="text-yellow-500">✋ Open Hand:</span> Cosmic Explosion</p>
-                <p><span className="text-yellow-500">✊ Fist:</span> Form Tree</p>
-                <p><span className="text-yellow-500">↔️ Move Hand:</span> Rotate View</p>
-                <p><span className="text-yellow-500">🤏 Pinch:</span> Select a Random Photo</p>
+                <p><span className="text-yellow-500">✋ 张开手掌：</span>宇宙大爆炸！💥</p>
+                <p><span className="text-yellow-500">✊ 握紧拳头：</span>圣诞树集结 🎄</p>
+                <p><span className="text-yellow-500">↔️ 左右移动：</span>旋转视角看风景 🌟</p>
+                <p><span className="text-yellow-500">🤏 捏合手指：</span>随机抽取幸运照片 📸</p>
                 <button
                   onClick={() => setDebugMode(!debugMode)}
                   className="mt-2 text-xs bg-yellow-500/20 hover:bg-yellow-500/40 text-yellow-200 px-2 py-1 rounded transition-colors w-full"
                 >
-                  {debugMode ? '🎥 Hide Camera' : '🎥 Show Camera'}
+                  {debugMode ? '🎥 隐藏视频' : '🎥 显示视频'}
                 </button>
               </div>
             )}
