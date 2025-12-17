@@ -160,26 +160,42 @@ const GestureController: React.FC<GestureControllerProps> = ({ onUpdate, enabled
             }
 
             // Convert to NDC coordinates
-            // NOTE: We do NOT mirror X here because the video element itself is already mirrored with CSS
+            // Video is CSS-mirrored for display, but 3D scene is NOT mirrored
+            // Use original coordinates for raycasting
             let x = (indexTip.x * 2 - 1);
             let y = -(indexTip.y * 2 - 1); // Invert Y for Three.js coordinate system
 
-            // Apply Aspect correction
-            x *= scaleX;
-            y *= scaleY;
+            // NO ASPECT CORRECTION NEEDED
+            // The raycaster.setFromCamera() handles projection automatically
+            // Applying aspect correction here causes misalignment
 
-            // Open Hand Detection for Photo Selection
-            // When hand is OPEN (large dist between middle finger and wrist), trigger selection
-            // This is more natural than pinch when using fist to assemble the tree
-            // Lowered threshold to 0.25 (from 0.3) to make selection easier and more forgiving
-            const isOpenHandSelect = dist > 0.3;
+            // Pinch Detection for Photo Selection
+            // When thumb and index finger are close together (pinch), trigger selection
+            // This is more intuitive and natural for selecting photos
+            const pinchDist = Math.sqrt(
+              Math.pow(thumbTip.x - indexTip.x, 2) +
+              Math.pow(thumbTip.y - indexTip.y, 2)
+            );
+
+            const isPinching = pinchDist < 0.05; // Fingers close together = pinch
+
+            // Debug logging
+            const debugEl = document.getElementById('cursor-debug');
+            if (debugEl) {
+              debugEl.innerHTML = `
+                Raw IndexTip: (${indexTip.x.toFixed(3)}, ${indexTip.y.toFixed(3)})<br/>
+                NDC (No Aspect): (${x.toFixed(3)}, ${y.toFixed(3)})<br/>
+                Pinch Dist: ${pinchDist.toFixed(3)}<br/>
+                Active: ${isPinching ? 'YES ✓' : 'NO'}
+              `;
+            }
 
             onUpdate({
               rotation: rotationValue,
               dispersion: dispersionValue,
               isHandDetected: true,
               cursor: { x, y },
-              isPinching: isOpenHandSelect // Renamed from isPinching but keeps same interface
+              isPinching: isPinching
             });
 
           } else {
@@ -236,6 +252,23 @@ const GestureController: React.FC<GestureControllerProps> = ({ onUpdate, enabled
       {!isLoaded && debugMode && <div className="absolute inset-0 flex items-center justify-center text-white text-xs">Loading AI...</div>}
       <video ref={videoRef} className="absolute w-full h-full object-cover transform scale-x-[-1]" autoPlay playsInline muted />
       <canvas ref={canvasRef} className="absolute w-full h-full object-cover transform scale-x-[-1]" />
+      {debugMode && (
+        <div style={{
+          position: 'absolute',
+          top: '200px',
+          left: '10px',
+          color: 'white',
+          backgroundColor: 'rgba(0,0,0,0.7)',
+          padding: '10px',
+          fontFamily: 'monospace',
+          fontSize: '12px',
+          zIndex: 1000,
+          pointerEvents: 'none'
+        }}>
+          <div>🎯 Cursor Debug Info</div>
+          <div id="cursor-debug"></div>
+        </div>
+      )}
     </div>
   );
 };

@@ -446,6 +446,11 @@ const Scene = ({
       let speed = 0.1;
       if (interactionMode === InteractionMode.GESTURE) {
         speed = gestureRef.current.rotation;
+
+        // Slow down rotation by 2x when tree is dispersed to make photo selection easier
+        if (gestureRef.current.dispersion > 0.5) {
+          speed *= 0.1;
+        }
       }
 
       // If focused, slow down significantly to avoid dizziness
@@ -456,22 +461,19 @@ const Scene = ({
       groupRef.current.rotation.y += speed * delta;
     }
 
-    // 2. Raycasting Logic for Focus Mode
-    if (interactionMode === InteractionMode.GESTURE && gestureRef.current.isHandDetected && gestureRef.current.cursor && photosGroupRef.current) {
-      const { cursor, isPinching } = gestureRef.current;
+    // 2. Photo Selection Logic - Random selection on pinch
+    if (interactionMode === InteractionMode.GESTURE && gestureRef.current.isHandDetected) {
+      const { isPinching, dispersion } = gestureRef.current;
 
-      // Update raycaster
-      raycaster.setFromCamera(new THREE.Vector2(cursor.x, cursor.y), camera);
-
-      // Raycast against ONLY photos for performance
-      const intersects = raycaster.intersectObjects(photosGroupRef.current.children, true);
-      const hit = intersects.find(i => i.object.name === "photo-hitbox");
-
-      if (hit && isPinching) {
-        // If pinching a photo, focus it
-        gestureRef.current.focusedId = hit.object.userData.id;
-      } else if (!isPinching) {
-        // Release focus if not pinching
+      // Only allow pinch selection when hand is somewhat open (dispersion > 0.3)
+      // This prevents accidental selection when making a fist
+      if (isPinching && dispersion > 0.3 && !gestureRef.current.focusedId) {
+        // When pinch is first detected and no photo is focused, select a random one
+        const randomIndex = Math.floor(Math.random() * photos.length);
+        const randomPhoto = photos[randomIndex];
+        gestureRef.current.focusedId = randomPhoto.id;
+      } else if (!isPinching || dispersion <= 0.3) {
+        // Release focus when not pinching OR when hand is closed (fist)
         gestureRef.current.focusedId = null;
       }
     }
@@ -519,7 +521,7 @@ const Scene = ({
       <pointLight position={[10, 10, 10]} intensity={1} color="#ffaa00" />
       <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
 
-      <Cursor gestureRef={gestureRef} interactionMode={interactionMode} />
+      {/* <Cursor gestureRef={gestureRef} interactionMode={interactionMode} /> */}
     </>
   );
 };
@@ -696,7 +698,7 @@ const App: React.FC = () => {
       initialPhotos.push({
         id: `photo-${i}`,
         // Using generic placeholders to ensure the app loads without errors if local files are missing.
-        url: `https://picsum.photos/seed/${i + 2024}/400/500`,
+        url: `photos/${i}.jpg`,
         position: [Math.cos(angle) * r, h, Math.sin(angle) * r],
         rotation: [0, -angle, 0]
       });
@@ -841,7 +843,7 @@ const App: React.FC = () => {
                 <p><span className="text-yellow-500">✋ Open Hand:</span> Cosmic Explosion</p>
                 <p><span className="text-yellow-500">✊ Fist:</span> Form Tree</p>
                 <p><span className="text-yellow-500">↔️ Move Hand:</span> Rotate View</p>
-                <p><span className="text-yellow-500">👆 Point (Open):</span> Select Photo</p>
+                <p><span className="text-yellow-500">🤏 Pinch:</span> Select a Random Photo</p>
                 <button
                   onClick={() => setDebugMode(!debugMode)}
                   className="mt-2 text-xs bg-yellow-500/20 hover:bg-yellow-500/40 text-yellow-200 px-2 py-1 rounded transition-colors w-full"
